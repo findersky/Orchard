@@ -33,7 +33,7 @@ namespace Orchard.ContentManagement {
         private readonly ICacheManager _cacheManager;
         private readonly Func<IContentManagerSession> _contentManagerSession;
         private readonly Lazy<IContentDisplay> _contentDisplay;
-        private readonly Lazy<ITransactionManager> _transactionManager; 
+        private readonly Lazy<ITransactionManager> _transactionManager;
         private readonly Lazy<IEnumerable<IContentHandler>> _handlers;
         private readonly Lazy<IEnumerable<IIdentityResolverSelector>> _identityResolverSelectors;
         private readonly Lazy<IEnumerable<ISqlStatementProvider>> _sqlStatementProviders;
@@ -78,7 +78,11 @@ namespace Orchard.ContentManagement {
         public ILogger Logger { get; set; }
 
         public IEnumerable<IContentHandler> Handlers {
-              get { return _handlers.Value; }
+            get { return _handlers.Value; }
+        }
+
+        public ITransactionManager TransactionManager {
+            get { return _transactionManager.Value; }
         }
 
         public IEnumerable<ContentTypeDefinition> GetContentTypeDefinitions() {
@@ -277,7 +281,8 @@ namespace Orchard.ContentManagement {
             return _contentItemVersionRepository
                 .Fetch(x => x.ContentItemRecord.Id == id)
                 .OrderBy(x => x.Number)
-                .Select(x => Get(x.Id, VersionOptions.VersionRecord(x.Id)));
+                .Select(x => Get(x.Id, VersionOptions.VersionRecord(x.Id)))
+                .Where(ci => ci != null); 
         }
 
         public IEnumerable<T> GetMany<T>(IEnumerable<int> ids, VersionOptions options, QueryHints hints) where T : class, IContent {
@@ -301,6 +306,7 @@ namespace Orchard.ContentManagement {
 
             var itemsById = contentItemVersionRecords
                 .Select(r => Get(r.ContentItemRecord.Id, options.IsDraftRequired ? options : VersionOptions.VersionRecord(r.Id)))
+                .Where(ci => ci != null)
                 .GroupBy(ci => ci.Id)
                 .ToDictionary(g => g.Key);
 
@@ -317,6 +323,7 @@ namespace Orchard.ContentManagement {
 
             var itemsById = contentItemVersionRecords
                 .Select(r => Get(r.ContentItemRecord.Id, VersionOptions.VersionRecord(r.Id)))
+                .Where(ci => ci != null)
                 .GroupBy(ci => ci.VersionRecord.Id)
                 .ToDictionary(g => g.Key);
 
@@ -442,6 +449,21 @@ namespace Orchard.ContentManagement {
             Handlers.Invoke(handler => handler.Removed(context), Logger);
         }
 
+        public virtual void DiscardDraft(ContentItem contentItem) {
+            var session = _transactionManager.Value.GetSession();
+
+            // Delete the draft content item version record.
+            session
+                .CreateQuery("delete from Orchard.ContentManagement.Records.ContentItemVersionRecord civ where civ.ContentItemRecord.Id = (:id) and civ.Published = false and civ.Latest = true")
+                .SetParameter("id", contentItem.Id)
+                .ExecuteUpdate();
+
+            // After deleting the draft, get the published version. If for any reason there would be more than one,
+            // get the last one and set the Latest property to true.
+            var publishedVersionRecord = contentItem.Record.Versions.OrderBy(x => x.Number).ToArray().Last();
+            publishedVersionRecord.Latest = true;
+        }
+
         public virtual void Destroy(ContentItem contentItem) {
             var session = _transactionManager.Value.GetSession();
             var context = new DestroyContentContext(contentItem);
@@ -562,27 +584,16 @@ namespace Orchard.ContentManagement {
         }
 
         public virtual ContentItem Clone(ContentItem contentItem) {
-            // Mostly taken from: http://orchard.codeplex.com/discussions/396664
-            var importContentSession = new ImportContentSession(this);
+            var cloneContentItem = New(contentItem.ContentType);
+            Create(cloneContentItem, VersionOptions.Draft);
 
-            var element = Export(contentItem);
+            var context = new CloneContentContext(contentItem, cloneContentItem);
 
-            // If a handler prevents this element from being exported, it can't be cloned
-            if (element == null) {
-                throw new InvalidOperationException("The content item couldn't be cloned because a handler prevented it from being exported.");
-            }
+            Handlers.Invoke(handler => handler.Cloning(context), Logger);
 
-            var elementId = element.Attribute("Id");
-            var copyId = elementId.Value + "-copy";
-            elementId.SetValue(copyId);
-            var status = element.Attribute("Status");
-            if (status != null) status.SetValue("Draft"); // So the copy is always a draft.
+            Handlers.Invoke(handler => handler.Cloned(context), Logger);
 
-            importContentSession.Set(copyId, element.Name.LocalName);
-
-            Import(element, importContentSession);
-
-            return importContentSession.Get(copyId, element.Name.LocalName);
+            return cloneContentItem;
         }
 
         public virtual ContentItem Restore(ContentItem contentItem, VersionOptions options) {
@@ -765,13 +776,9 @@ namespace Orchard.ContentManagement {
             }
 
             var context = new ImportContentContext(item, element, importContentSession);
-            foreach (var contentHandler in Handlers) {
-                contentHandler.Importing(context);
-            }
 
-            foreach (var contentHandler in Handlers) {
-                contentHandler.Imported(context);
-            }
+            Handlers.Invoke(contentHandler => contentHandler.Importing(context), Logger);
+            Handlers.Invoke(contentHandler => contentHandler.Imported(context), Logger);
 
             var savedItem = Get(item.Id, VersionOptions.Latest);
 
@@ -790,17 +797,30 @@ namespace Orchard.ContentManagement {
             }
         }
 
+        public void CompleteImport(XElement element, ImportContentSession importContentSession) {
+            var elementId = element.Attribute("Id");
+            if (elementId == null) {
+                return;
+            }
+
+            var identity = elementId.Value;
+
+            if (String.IsNullOrWhiteSpace(identity)) {
+                return;
+            }
+
+            var item = importContentSession.Get(identity, VersionOptions.Latest, XmlConvert.DecodeName(element.Name.LocalName));
+            var context = new ImportContentContext(item, element, importContentSession);
+
+            Handlers.Invoke(contentHandler => contentHandler.ImportCompleted(context), Logger);
+        }
+
         public XElement Export(ContentItem contentItem) {
             var context = new ExportContentContext(contentItem, new XElement(XmlConvert.EncodeLocalName(contentItem.ContentType)));
 
-            foreach (var contentHandler in Handlers) {
-                contentHandler.Exporting(context);
-            }
-
-            foreach (var contentHandler in Handlers) {
-                contentHandler.Exported(context);
-            }
-
+            Handlers.Invoke(contentHandler => contentHandler.Exporting(context), Logger);
+            Handlers.Invoke(contentHandler => contentHandler.Exported(context), Logger);
+            
             if (context.Exclude) {
                 return null;
             }
@@ -817,7 +837,7 @@ namespace Orchard.ContentManagement {
         }
 
         private ContentTypeRecord AcquireContentTypeRecord(string contentType) {
-            var contentTypeId = _cacheManager.Get(contentType + "_Record", ctx => {
+            var contentTypeId = _cacheManager.Get(contentType + "_Record", true, ctx => {
                 ctx.Monitor(_signals.When(contentType + "_Record"));
 
                 var contentTypeRecord = _contentTypeRepository.Get(x => x.Name == contentType);

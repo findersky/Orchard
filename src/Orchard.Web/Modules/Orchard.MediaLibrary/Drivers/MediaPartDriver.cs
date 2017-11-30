@@ -36,30 +36,34 @@ namespace Orchard.MediaLibrary.Drivers {
         }
 
         protected override void Importing(MediaPart part, ContentManagement.Handlers.ImportContentContext context) {
-            var mimeType = context.Attribute(part.PartDefinition.Name, "MimeType");
-            if (mimeType != null) {
-                part.MimeType = mimeType;
+            // Don't do anything if the tag is not specified.
+            if (context.Data.Element(part.PartDefinition.Name) == null) {
+                return;
             }
 
-            var caption = context.Attribute(part.PartDefinition.Name, "Caption");
-            if (caption != null) {
-                part.Caption = caption;
-            }
+            context.ImportAttribute(part.PartDefinition.Name, "MimeType", mimeType =>
+                part.MimeType = mimeType
+            );
 
-            var alternateText = context.Attribute(part.PartDefinition.Name, "AlternateText");
-            if (alternateText != null) {
-                part.AlternateText = alternateText;
-            }
+            context.ImportAttribute(part.PartDefinition.Name, "Caption", caption =>
+                part.Caption = caption
+            );
 
-            var folderPath = context.Attribute(part.PartDefinition.Name, "FolderPath");
-            if (folderPath != null) {
-                part.FolderPath = folderPath;
-            }
+            context.ImportAttribute(part.PartDefinition.Name, "AlternateText", alternateText =>
+                part.AlternateText = alternateText
+            );
 
-            var fileName = context.Attribute(part.PartDefinition.Name, "FileName");
-            if (fileName != null) {
-                part.FileName = fileName;
-            }
+            context.ImportAttribute(part.PartDefinition.Name, "FolderPath", folderPath =>
+                part.FolderPath = folderPath
+            );
+
+            context.ImportAttribute(part.PartDefinition.Name, "FileName", fileName =>
+                part.FileName = fileName
+            );
+
+            context.ImportAttribute(part.PartDefinition.Name, "LogicalType", logicalType =>
+                part.LogicalType = logicalType
+            );
         }
 
         protected override void Exporting(MediaPart part, ContentManagement.Handlers.ExportContentContext context) {
@@ -68,6 +72,7 @@ namespace Orchard.MediaLibrary.Drivers {
             context.Element(part.PartDefinition.Name).SetAttributeValue("AlternateText", part.AlternateText);
             context.Element(part.PartDefinition.Name).SetAttributeValue("FolderPath", part.FolderPath);
             context.Element(part.PartDefinition.Name).SetAttributeValue("FileName", part.FileName);
+            context.Element(part.PartDefinition.Name).SetAttributeValue("LogicalType", part.LogicalType);
         }
     }
 }

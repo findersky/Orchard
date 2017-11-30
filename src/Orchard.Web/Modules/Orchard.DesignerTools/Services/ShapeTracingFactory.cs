@@ -2,6 +2,7 @@
 using System.Linq;
 using System.Text;
 using System.Web.Routing;
+using System.Xml.Linq;
 using Orchard.DisplayManagement.Descriptors;
 using Orchard.DisplayManagement.Implementation;
 using Orchard.DisplayManagement.Shapes;
@@ -11,45 +12,43 @@ using Orchard.Security;
 using Orchard.Themes;
 using Orchard.UI;
 using Orchard.UI.Admin;
+using System.Web;
 
 namespace Orchard.DesignerTools.Services {
     [OrchardFeature("Orchard.DesignerTools")]
     public class ShapeTracingFactory : IShapeFactoryEvents, IShapeDisplayEvents {
+        private readonly WorkContext _workContext;
         private readonly IShapeTableManager _shapeTableManager;
-        private readonly IThemeManager _themeManager;
         private readonly IWebSiteFolder _webSiteFolder;
         private readonly IAuthorizer _authorizer;
-        private readonly IWorkContextAccessor _workContextAccessor;
         private bool _processing;
 
         private int _shapeId;
 
         public ShapeTracingFactory(
             IWorkContextAccessor workContextAccessor, 
-            IShapeTableManager shapeTableManager, 
-            IThemeManager themeManager, 
+            IShapeTableManager shapeTableManager,
             IWebSiteFolder webSiteFolder,
             IAuthorizer authorizer
             ) {
-            _workContextAccessor = workContextAccessor;
+            _workContext = workContextAccessor.GetContext();
             _shapeTableManager = shapeTableManager;
-            _themeManager = themeManager;
             _webSiteFolder = webSiteFolder;
             _authorizer = authorizer;
         }
 
         private bool IsActivable() {
-            var workContext = _workContextAccessor.GetContext();
+            // don't activate if no HttpContext
+            if (_workContext.HttpContext == null)
+                return false;
 
             // activate on front-end only
-            if (AdminFilter.IsApplied(new RequestContext(workContext.HttpContext, new RouteData())))
+            if (AdminFilter.IsApplied(new RequestContext(_workContext.HttpContext, new RouteData())))
                 return false;
 
             // if not logged as a site owner, still activate if it's a local request (development machine)
-            if (!_authorizer.Authorize(StandardPermissions.SiteOwner)) {
-                
-                return workContext.HttpContext.Request.IsLocal;
-            }
+            if (!_authorizer.Authorize(StandardPermissions.SiteOwner))
+                return _workContext.HttpContext.Request.IsLocal;
 
             return true;
         }
@@ -78,8 +77,7 @@ namespace Orchard.DesignerTools.Services {
                 && context.ShapeType != "DateTimeRelative") {
 
                 var shapeMetadata = (ShapeMetadata)context.Shape.Metadata;
-                var workContext = _workContextAccessor.GetContext();
-                var currentTheme = workContext.CurrentTheme;
+                var currentTheme = _workContext.CurrentTheme;
                 var shapeTable = _shapeTableManager.GetShapeTable(currentTheme.Id);
 
                 if (!shapeTable.Descriptors.ContainsKey(shapeMetadata.Type)) {
@@ -102,8 +100,7 @@ namespace Orchard.DesignerTools.Services {
 
             var shape = context.Shape;
             var shapeMetadata = (ShapeMetadata) context.Shape.Metadata;
-            var workContext = _workContextAccessor.GetContext();
-            var currentTheme = _themeManager.GetRequestTheme(workContext.HttpContext.Request.RequestContext);
+            var currentTheme = _workContext.CurrentTheme;
             var shapeTable = _shapeTableManager.GetShapeTable(currentTheme.Id);
 
             if (!shapeMetadata.Wrappers.Contains("ShapeTracingWrapper")) {

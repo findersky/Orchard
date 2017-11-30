@@ -119,6 +119,10 @@ namespace Orchard.Tests.Environment.Extensions {
                 throw new NotImplementedException();
             }
 
+            public bool LoaderIsSuitable(ExtensionDescriptor descriptor) {
+                throw new NotImplementedException();
+            }
+
             #endregion
         }
 
@@ -512,7 +516,7 @@ Features:
         Dependencies: Beta
 ");
 
-            moduleExtensionFolder.Manifests.Add("Classic", @"
+            themeExtensionFolder.Manifests.Add("Classic", @"
 Name: Classic
 Version: 1.0.3
 OrchardVersion: 1

@@ -71,8 +71,11 @@ $(function () {
 
         var listWidth = $('#media-library-main-list').width();
         var listHeight = $('#media-library-main-list').height();
-        var itemWidth = $('.thumbnail').first().width();
-        var itemHeight = $('.thumbnail').first().height();
+        var itemWidth = $('#media-library-main-list li').first().width();
+        var itemHeight = $('#media-library-main-list li').first().height();
+        var defaultDimension = $(window).width() < 1420 ? 120 : 200;
+        if (itemHeight == 0 || itemHeight == null) itemHeight = defaultDimension;
+        if (itemWidth == 0 || itemWidth == null) itemWidth = defaultDimension;
         var draftText = $("#media-library").data("draft-text");
 
         var itemsPerRow = Math.floor(listWidth / itemWidth);
@@ -324,6 +327,17 @@ $(function () {
                 window.location = url;
             };
 
+            self.replaceMedia = function (item) {
+                var url = settings.replaceUrl;
+                var ids = [];
+                var folder = "";
+                if (self.displayed()) {
+                    folder = self.displayed();
+                }
+                viewModel.selection().forEach(function (item) { ids.push(item.data.id); });
+                var actionurl = url + '?folderPath=' + encodeURIComponent(folder) + "&replaceId=" + encodeURIComponent(ids[0]);
+                window.location = actionurl;
+            }
             var selectFolderOrRecent = function () {
                 if (self.displayed()) {
                     self.selectFolder(self.displayed());
@@ -369,19 +383,25 @@ $(function () {
                 $.ajax({
                     type: "GET",
                     url: url,
-                    cache: false
+                    cache: false,
+                    dataType: 'json'
                 }).done(function (data) {
                     var newChildFolders = data.childFolders;
 
                     var nextFetch = self.folderPath();
 
                     if (deepestChildPath !== undefined && deepestChildPath !== null && (deepestChildPath.indexOf(self.folderPath()) === 0)) {
-                        var deepestChildPathBreadCrumbs = deepestChildPath.split('\\');
-                        var currentBreadCrumbs = self.folderPath().split('\\');
+                        /* NTFS uses "\" as the directory separator, but AFS uses "/".
+                           Since both of them are illegal characters for file and folder names, it's safe to determine the type of file storage
+                           currently in use based on the directory separator character. */
+                        var separator = deepestChildPath.indexOf('/') > -1 ? '/' : '\\';
+
+                        var deepestChildPathBreadCrumbs = deepestChildPath.split(separator);
+                        var currentBreadCrumbs = self.folderPath().split(separator);
 
                         var diff = deepestChildPathBreadCrumbs.length - currentBreadCrumbs.length;
                         if (diff > 0) {
-                            nextFetch = self.folderPath() + '\\' + deepestChildPathBreadCrumbs[deepestChildPathBreadCrumbs.length - diff];
+                            nextFetch = self.folderPath() + separator + deepestChildPathBreadCrumbs[deepestChildPathBreadCrumbs.length - diff];
                         }
                     }
 
@@ -431,7 +451,7 @@ $(function () {
         
         ko.applyBindings(viewModel);
 
-        if (settings.hasFolderPath) {
+        if (settings.hasFolderPath && settings.folderPath != settings.rootFolderPath) {
             viewModel.displayFolder(settings.folderPath);
 
             //fetch displayed folder structure
@@ -567,6 +587,7 @@ $(function () {
                     viewModel.clearSelection();
                 } else {
                     console.log('failed to delete media items');
+                    alert(settings.unauthorizedMessage);
                 }
                 return false;
             });
@@ -601,10 +622,12 @@ $(function () {
                     viewModel.getMediaItems(viewModel.pageCount);
                 } else {
                     console.log('failed to clone media items');
+                    alert(settings.unauthorizedMessage);
                 }
                 return false;
             });
             return false;
         });
+
     })(window.mediaLibrarySettings);
 })

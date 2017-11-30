@@ -9,6 +9,7 @@ using Orchard.Mvc.Filters;
 using Orchard.Themes;
 using Orchard.UI.Admin;
 using Orchard.Widgets.Services;
+using Orchard.ContentManagement;
 
 namespace Orchard.Widgets.Filters {
     public class WidgetFilter : FilterProvider, IResultFilter {
@@ -50,6 +51,8 @@ namespace Orchard.Widgets.Filters {
             }
 
             var widgetParts = _widgetsService.GetWidgets(_layerEvaluationService.GetActiveLayerIds());
+            widgetParts.Select(w => w.ContentItem).ToList()
+                        .LoadContainerContentItems(_orchardServices.ContentManager, 1);
 
             // Build and add shape to zone.
             var zones = workContext.Layout.Zones;
@@ -59,7 +62,7 @@ namespace Orchard.Widgets.Filters {
             foreach (var widgetPart in widgetParts) {
                 var commonPart = widgetPart.As<ICommonPart>();
                 if (commonPart == null || commonPart.Container == null) {
-                    Logger.Warning("The widget '{0}' is has no assigned layer or the layer does not exist.", widgetPart.Title);
+                    Logger.Warning("The widget '{0}' has no assigned layer or the layer does not exist.", widgetPart.Title);
                     continue;
                 }
 
