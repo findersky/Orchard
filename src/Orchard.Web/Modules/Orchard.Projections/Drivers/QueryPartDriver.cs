@@ -44,6 +44,8 @@ namespace Orchard.Projections.Drivers {
 
             var element = context.Element(part.PartDefinition.Name);
 
+            element.SetAttributeValue("VersionScope", part.VersionScope);
+
             element.Add(
                 new XElement("FilterGroups",
                     part.FilterGroups.Select(filterGroup =>
@@ -103,6 +105,7 @@ namespace Orchard.Projections.Drivers {
                             new XAttribute("Display", layout.Display),
                             new XAttribute("DisplayType", layout.DisplayType ?? ""),
                             new XAttribute("Type", layout.Type ?? ""),
+                            new XAttribute("GUIdentifier", layout.GUIdentifier ?? ""),
 
                             // Properties
                             new XElement("Properties", layout.Properties.Select(GetPropertyXml)),
@@ -120,6 +123,8 @@ namespace Orchard.Projections.Drivers {
             if (context.Data.Element(part.PartDefinition.Name) == null) {
                 return;
             }
+
+            context.ImportAttribute(part.PartDefinition.Name, "VersionScope", scope => part.VersionScope = (QueryVersionScopeOptions)Enum.Parse(typeof(QueryVersionScopeOptions), scope));
 
             var queryElement = context.Data.Element(part.PartDefinition.Name);
 
@@ -190,6 +195,7 @@ namespace Orchard.Projections.Drivers {
                     DisplayType = layout.Attribute("DisplayType").Value,
                     State = state,
                     Type = type,
+                    GUIdentifier = string.IsNullOrWhiteSpace(layout.Attribute("GUIdentifier").Value) ? Guid.NewGuid().ToString() : layout.Attribute("GUIdentifier").Value,
                     Properties = layout.Element("Properties").Elements("Property").Select(GetProperty).ToList(),
                     GroupProperty = GetProperty(layout.Element("Group").Element("Property"))
                 };
@@ -228,7 +234,7 @@ namespace Orchard.Projections.Drivers {
                 new XAttribute("MaxLength", property.MaxLength),
                 new XAttribute("NoResultText", property.NoResultText ?? ""),
                 new XAttribute("PreserveLines", property.PreserveLines),
-                new XAttribute("RewriteOutput", property.RewriteOutput),
+                new XAttribute("RewriteOutputCondition", property.RewriteOutputCondition ?? ""),
                 new XAttribute("RewriteText", property.RewriteText ?? ""),
                 new XAttribute("StripHtmlTags", property.StripHtmlTags),
                 new XAttribute("TrimLength", property.TrimLength),
@@ -266,7 +272,10 @@ namespace Orchard.Projections.Drivers {
                 NoResultText = property.Attribute("NoResultText").Value,
                 Position = Convert.ToInt32(property.Attribute("Position").Value),
                 PreserveLines = Convert.ToBoolean(property.Attribute("PreserveLines").Value),
-                RewriteOutput = Convert.ToBoolean(property.Attribute("RewriteOutput").Value),
+                // RewriteOutput is processed to ensure backwards-compatibility with recipes
+                // that were created before RewriteOutputCondition was added.
+                RewriteOutputCondition = property.Attribute("RewriteOutputCondition")?.Value ??
+                    property.Attribute("RewriteOutput")?.Value,
                 RewriteText = property.Attribute("RewriteText").Value,
                 State = property.Attribute("State").Value,
                 StripHtmlTags = Convert.ToBoolean(property.Attribute("StripHtmlTags").Value),

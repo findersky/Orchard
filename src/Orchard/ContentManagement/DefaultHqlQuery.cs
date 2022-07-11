@@ -4,8 +4,10 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using NHibernate;
 using NHibernate.Engine;
+using NHibernate.Hql;
 using NHibernate.Hql.Ast.ANTLR;
 using NHibernate.Transform;
 using Orchard.ContentManagement.Records;
@@ -183,10 +185,21 @@ namespace Orchard.ContentManagement {
             return Slice(0, 0);
         }
 
-        public IEnumerable<ContentItem> Slice(int skip, int count) {
+        public IEnumerable<int> ListIds() {
+            return ListIds(0, 0);
+        }
+
+        public IEnumerable<ContentItem> Slice(int skip, int count)
+        {
+            var ids = ListIds(skip, count);
+            return ContentManager.GetManyByVersionId(ids, new QueryHints().ExpandRecords(_includedPartRecords));
+        }
+
+        private IEnumerable<int> ListIds(int skip, int count)
+        {
             ApplyHqlVersionOptionsRestrictions(_versionOptions);
             _cacheable = true;
-            
+
             var hql = ToHql(false);
 
             var query = _session
@@ -194,19 +207,19 @@ namespace Orchard.ContentManagement {
                 .SetCacheable(_cacheable)
                 ;
 
-            if (skip != 0) {
+            if (skip != 0)
+            {
                 query.SetFirstResult(skip);
             }
-            if (count != 0 && count != Int32.MaxValue) {
+            if (count != 0 && count != Int32.MaxValue)
+            {
                 query.SetMaxResults(count);
             }
 
-            var ids = query
+            return query
                 .SetResultTransformer(Transformers.AliasToEntityMap)
                 .List<IDictionary>()
                 .Select(x => (int)x["Id"]);
-
-            return ContentManager.GetManyByVersionId(ids, new QueryHints().ExpandRecords(_includedPartRecords));
         }
 
         public int Count() {
@@ -215,12 +228,15 @@ namespace Orchard.ContentManagement {
             sql = "SELECT count(*) as totalCount from (" + sql + ") t";
             return Convert.ToInt32(_session.CreateSQLQuery(sql)
                     .AddScalar("totalCount", NHibernateUtil.Int32)
+                    .SetCacheable(true) // TODO: check that this doesn't break anything
                     .UniqueResult());
         }
 
         public string ToSql(bool count) {
             var sessionImp = (ISessionImplementor)_session;
-            var translators = TranslatorFactory.CreateQueryTranslators(ToHql(count), null, false, sessionImp.EnabledFilters, sessionImp.Factory);
+            var translators = TranslatorFactory.CreateQueryTranslators(
+                new StringQueryExpression(ToHql(count)),
+                null, false, sessionImp.EnabledFilters, sessionImp.Factory);
             return translators[0].SQLString;
         }
 
@@ -239,8 +255,14 @@ namespace Orchard.ContentManagement {
                     sort.Item2(sortFactory);
 
                     if (!sortFactory.Randomize) {
-                        sb.Append(", ");
-                        sb.Append(sort.Item1.Name).Append(".").Append(sortFactory.PropertyName);
+                        if (!string.IsNullOrWhiteSpace(sortFactory.PropertyName)) {
+                            sb.Append(", ");
+                            sb.Append(sort.Item1.Name).Append(".").Append(sortFactory.PropertyName);
+                        }
+                        if (!string.IsNullOrWhiteSpace(sortFactory.AdditionalSelectStatement)) {
+                            sb.Append(", ");
+                            sb.Append(sortFactory.AdditionalSelectStatement);
+                        }
                     }
                     else {
                         // select distinct can't be used with newid()
@@ -313,9 +335,16 @@ namespace Orchard.ContentManagement {
                     }
                 }
                 else {
-                    sb.Append(sort.Item1.Name).Append(".").Append(sortFactory.PropertyName);
-                    if (!sortFactory.Ascending) {
-                        sb.Append(" desc");
+                    if (!string.IsNullOrWhiteSpace(sortFactory.AdditionalOrderByStatement)) {
+                        sb.Append(sortFactory.AdditionalOrderByStatement);
+                        if (!sortFactory.Ascending) {
+                            sb.Append(" desc");
+                        }
+                    } else if (!string.IsNullOrWhiteSpace(sortFactory.PropertyName)) {
+                        sb.Append(sort.Item1.Name).Append(".").Append(sortFactory.PropertyName);
+                        if (!sortFactory.Ascending) {
+                            sb.Append(" desc");
+                        }
                     }
                 }
             }
@@ -442,6 +471,8 @@ namespace Orchard.ContentManagement {
         public bool Ascending { get; set; }
         public string PropertyName { get; set; }
         public bool Randomize { get; set; }
+        public string AdditionalSelectStatement { get; set; }
+        public string AdditionalOrderByStatement { get; set; }
 
         public void Asc(string propertyName) {
             PropertyName = propertyName;
@@ -455,6 +486,18 @@ namespace Orchard.ContentManagement {
 
         public void Random() {
             Randomize = true;
+        }
+
+        public void Asc(string propertyName, string additionalSelectOps, string additionalOrderOps) {
+            Asc(propertyName);
+            AdditionalSelectStatement = additionalSelectOps;
+            AdditionalOrderByStatement = additionalOrderOps;
+        }
+
+        public void Desc(string propertyName, string additionalSelectOps, string additionalOrderOps) {
+            Desc(propertyName);
+            AdditionalSelectStatement = additionalSelectOps;
+            AdditionalOrderByStatement = additionalOrderOps;
         }
     }
 
@@ -552,6 +595,39 @@ namespace Orchard.ContentManagement {
             Criterion = HqlRestrictions.InG(propertyName, values);
         }
 
+        public void InSubquery(string propertyName, string subquery, Dictionary<string, object> parameters) {
+            string subqueryWithParameters = "";
+
+            Regex re = new Regex(@"(?<![^\s]):[^\s]+");
+            subqueryWithParameters = re.Replace(subquery, x => {
+                object param;
+
+                if (parameters.TryGetValue(x.ToString().TrimStart(':'), out param)) {
+                    var typeCode = Type.GetTypeCode(param.GetType());
+                    switch (typeCode) {
+                        case TypeCode.String:
+                        case TypeCode.DateTime:
+                            return HqlRestrictions.FormatValue(param);
+                        case TypeCode.UInt16:
+                        case TypeCode.UInt32:
+                        case TypeCode.UInt64:
+                        case TypeCode.Int16:
+                        case TypeCode.Int32:
+                        case TypeCode.Int64:
+                        case TypeCode.Decimal:
+                        case TypeCode.Double:
+                            return FormatNumber(param);
+                        default:
+                            return "";
+                    }
+                }
+
+                return "";
+            });
+
+            Criterion = InSubquery(propertyName, subqueryWithParameters);
+        }
+
         public void IsNull(string propertyName) {
             Criterion = HqlRestrictions.IsNull(propertyName);
         }
@@ -640,6 +716,21 @@ namespace Orchard.ContentManagement {
 
         public void NaturalId() {
             Criterion = HqlRestrictions.NaturalId();
+        }
+
+        private IHqlCriterion InSubquery(string propertyName, string subquery) {
+            if (string.IsNullOrWhiteSpace(subquery)) {
+                throw new ArgumentException("Subquery can't be empty", "subquery");
+            }
+            return new BinaryExpression("in", propertyName, "(" + subquery + ")");
+        }
+
+        private string FormatNumber(object value) {
+            decimal num;
+            if (Decimal.TryParse(value.ToString(), NumberStyles.Number, CultureInfo.InvariantCulture, out num))
+                return HqlRestrictions.FormatValue(value);
+            else
+                return "";
         }
     }
 

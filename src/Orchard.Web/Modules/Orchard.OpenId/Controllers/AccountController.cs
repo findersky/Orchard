@@ -85,6 +85,7 @@ namespace Orchard.OpenId.Controllers
             return this.RedirectLocal(returnUrl);
         }
 
+        [AlwaysAccessible]
         [SuppressMessage("Microsoft.Design", "CA1054:UriParametersShouldNotBeStrings", Justification = "Needs to take same parameter type as Controller.Redirect()")]
         public void Challenge(string openIdProvider, string returnUrl) {
             _userEventHandler.LoggingIn(openIdProvider, String.Empty);
@@ -122,7 +123,10 @@ namespace Orchard.OpenId.Controllers
 
         public ActionResult LogonCallback() {
             var user = _authenticationService.GetAuthenticatedUser();
-            _userEventHandler.LoggedIn(user);
+
+            if (user != null) {
+                _userEventHandler.LoggedIn(user); 
+            }
 
             if (TempData.ContainsKey("ReturnUrl"))
                 return this.RedirectLocal((String)TempData["ReturnUrl"]);

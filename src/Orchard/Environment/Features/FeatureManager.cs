@@ -79,9 +79,9 @@ namespace Orchard.Environment.Features {
 
             IDictionary<FeatureDescriptor, bool> availableFeatures = GetAvailableFeatures()
                 .ToDictionary(featureDescriptor => featureDescriptor,
-                                featureDescriptor => enabledFeatures.FirstOrDefault(shellFeature => shellFeature.Name == featureDescriptor.Id) != null);
+                                featureDescriptor => enabledFeatures.FirstOrDefault(shellFeature => shellFeature.Name.Equals(featureDescriptor.Id, StringComparison.OrdinalIgnoreCase)) != null);
 
-            //Fix for https://orchard.codeplex.com/workitem/21176 / https://github.com/OrchardCMS/Orchard/issues/6075 - added distinct to the end to ensure each feature is only listed once
+            //Fix for https://github.com/OrchardCMS/Orchard/issues/6075 - added distinct to the end to ensure each feature is only listed once
             IEnumerable<string> featuresToEnable = featureIds
                 .Select(featureId => EnableFeature(featureId, availableFeatures, force)).ToList()
                 .SelectMany(ies => ies.Select(s => s)).Distinct();
@@ -127,8 +127,8 @@ namespace Orchard.Environment.Features {
             if (featuresToDisable.Any()) {
                 foreach (string featureId in featuresToDisable) {
                     string id = featureId;
-
-                    enabledFeatures.RemoveAll(shellFeature => shellFeature.Name == id);
+                    
+                    enabledFeatures.RemoveAll(shellFeature => shellFeature.Name.Equals(id, StringComparison.OrdinalIgnoreCase)); 
                     Logger.Information("{0} was disabled", featureId);
                 }
 

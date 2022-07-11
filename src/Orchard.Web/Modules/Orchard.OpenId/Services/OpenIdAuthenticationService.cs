@@ -5,13 +5,14 @@ using System.Web.Security;
 using Orchard.Environment.Configuration;
 using Orchard.Environment.Extensions;
 using Orchard.Mvc;
+using Orchard.Mvc.Extensions;
 using Orchard.Security;
 using Orchard.Security.Providers;
 using Orchard.Services;
 
 namespace Orchard.OpenId.Services {
     [OrchardFeature("Orchard.OpenId")]
-    public class OpenIdAuthenticationService : IAuthenticationService {
+    public class OpenIdAuthenticationService : IAuthenticationService, IOpenIdAuthenticationService {
         private readonly ShellSettings _settings;
         private readonly IClock _clock;
         private readonly IMembershipService _membershipService;
@@ -79,9 +80,9 @@ namespace Orchard.OpenId.Services {
                 return FallbackAuthenticationService.GetAuthenticatedUser();
             }
 
-            var user = _httpContextAccessor.Current().GetOwinContext().Authentication.User;
+            var userIdentity = _httpContextAccessor.Current().GetOwinContext().Authentication.User.Identity;
 
-            if (!user.Identity.IsAuthenticated) {
+            if (string.IsNullOrEmpty(userIdentity.Name?.Trim()) || !userIdentity.IsAuthenticated) {
                 return null;
             }
 
@@ -90,20 +91,26 @@ namespace Orchard.OpenId.Services {
                 return _localAuthenticationUser;
             }
 
-            var userName = user.Identity.Name.Trim();
+            var userName = userIdentity.Name.Trim();
 
             //Get the local user, if local user account doesn't exist, create it 
             var localUser =
                 _membershipService.GetUser(userName) ??
                 _membershipService.CreateUser(new CreateUserParams(
-                    userName, Membership.GeneratePassword(16, 1), userName, string.Empty, string.Empty, true
+                    userName, Membership.GeneratePassword(16, 1), userName, string.Empty, string.Empty, true, false
                 ));
 
             return _localAuthenticationUser = localUser;
         }
 
-        private bool IsLocalUser() {
-            var anyClaim = _httpContextAccessor.Current().GetOwinContext().Authentication.User.Claims.FirstOrDefault();
+        public bool IsLocalUser() {
+            var httpContext = _httpContextAccessor.Current();
+
+            if (httpContext.IsBackgroundContext()) {
+                return true;
+            }
+
+            var anyClaim = httpContext.GetOwinContext().Authentication.User.Claims.FirstOrDefault();
 
             if (anyClaim == null || anyClaim.Issuer == Constants.General.LocalIssuer || anyClaim.Issuer == Constants.General.FormsIssuer) {
                 return true;

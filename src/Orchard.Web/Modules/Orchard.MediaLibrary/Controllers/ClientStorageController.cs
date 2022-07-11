@@ -77,9 +77,6 @@ namespace Orchard.MediaLibrary.Controllers {
 
             var statuses = new List<object>();
             var settings = Services.WorkContext.CurrentSite.As<MediaLibrarySettingsPart>();
-            var allowedExtensions = (settings.UploadAllowedFileTypeWhitelist ?? "")
-                .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
-                .Where(x => x.StartsWith("."));
 
             // Loop through each file in the request
             for (int i = 0; i < HttpContext.Request.Files.Count; i++) {
@@ -93,14 +90,12 @@ namespace Orchard.MediaLibrary.Controllers {
                 }
 
                 // skip file if the allowed extensions is defined and doesn't match
-                if (allowedExtensions.Any()) {
-                    if (!allowedExtensions.Any(e => filename.EndsWith(e, StringComparison.OrdinalIgnoreCase))) {
-                        statuses.Add(new {
-                            error = T("This file type is not allowed: {0}", Path.GetExtension(filename)).Text,
-                            progress = 1.0,
-                        });
-                        continue;
-                    }
+                if (!settings.IsFileAllowed(filename)) {
+                    statuses.Add(new {
+                        error = T("This file is not allowed: {0}", filename).Text,
+                        progress = 1.0,
+                    });
+                    continue;
                 }
 
                 try {
@@ -147,10 +142,7 @@ namespace Orchard.MediaLibrary.Controllers {
             var statuses = new List<object>();
 
             var settings = Services.WorkContext.CurrentSite.As<MediaLibrarySettingsPart>();
-            var allowedExtensions = (settings.UploadAllowedFileTypeWhitelist ?? "")
-                .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
-                .Where(x => x.StartsWith("."));
-
+            
             // Loop through each file in the request
             for (int i = 0; i < HttpContext.Request.Files.Count; i++) {
                 // Pointer to file
@@ -163,14 +155,12 @@ namespace Orchard.MediaLibrary.Controllers {
                 }
 
                 // skip file if the allowed extensions is defined and doesn't match
-                if (allowedExtensions.Any()) {
-                    if (!allowedExtensions.Any(e => filename.EndsWith(e, StringComparison.OrdinalIgnoreCase))) {
-                        statuses.Add(new {
-                            error = T("This file type is not allowed: {0}", Path.GetExtension(filename)).Text,
-                            progress = 1.0,
-                        });
-                        continue;
-                    }
+                if (!settings.IsFileAllowed(filename)) {
+                    statuses.Add(new {
+                        error = T("This file is not allowed: {0}", filename).Text,
+                        progress = 1.0,
+                    });
+                    continue;
                 }
 
                 try {
@@ -188,9 +178,15 @@ namespace Orchard.MediaLibrary.Controllers {
                                                                 .Where(x => x.FolderPath == replaceMedia.FolderPath && x.FileName == replaceMedia.FileName)
                                                                 .Count();
                     if (mediaItemsUsingTheFile == 1) { // if the file is referenced only by the deleted media content, the file too can be removed.
-                        _mediaLibraryService.DeleteFile(replaceMedia.FolderPath, replaceMedia.FileName);
-                    }
-                    else {
+                        try {
+                            _mediaLibraryService.DeleteFile(replaceMedia.FolderPath, replaceMedia.FileName);
+                        } catch (ArgumentException) { // File not found by FileSystemStorageProvider is thrown as ArgumentException.
+                            statuses.Add(new {
+                                error = T("Error when deleting file to replace: file {0} does not exist in folder {1}. Media has been updated anyway.", replaceMedia.FileName, replaceMedia.FolderPath).Text,
+                                progress = 1.0
+                            });
+                        }
+                    } else {
                         // it changes the media file name
                         replaceMedia.FileName = filename;
                     }
