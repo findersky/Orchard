@@ -1,26 +1,26 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Web.Mvc;
+using System.Web.Routing;
 using Orchard.ContentManagement;
+using Orchard.ContentManagement.Aspects;
+using Orchard.ContentManagement.Handlers;
+using Orchard.Core.Contents.Settings;
 using Orchard.Core.Navigation.Models;
 using Orchard.Core.Navigation.Services;
 using Orchard.Core.Navigation.ViewModels;
-using Orchard.Localization;
-using Orchard.Mvc.Extensions;
-using Orchard.UI;
-using Orchard.UI.Notify;
-using Orchard.UI.Navigation;
-using Orchard.Utility;
-using System;
-using Orchard.ContentManagement.Handlers;
-using Orchard.Logging;
-using Orchard.Exceptions;
-using Orchard.ContentManagement.Aspects;
-using Orchard.Utility.Extensions;
-using Orchard.Mvc.Html;
-using Orchard.Core.Contents.Settings;
 using Orchard.Data;
-using System.Web.Routing;
+using Orchard.Exceptions;
+using Orchard.Localization;
+using Orchard.Logging;
+using Orchard.Mvc.Extensions;
+using Orchard.Mvc.Html;
+using Orchard.UI;
+using Orchard.UI.Navigation;
+using Orchard.UI.Notify;
+using Orchard.Utility;
+using Orchard.Utility.Extensions;
 
 namespace Orchard.Core.Navigation.Controllers {
     [ValidateInput(false)]
@@ -249,13 +249,14 @@ namespace Orchard.Core.Navigation.Controllers {
         }
 
         [HttpPost, ActionName("Edit")]
-        [Mvc.FormValueRequired("submit.Save")]
+        [Mvc.FormValueRequired("submit.Publish")]
         public ActionResult EditPOST(int id, string returnUrl) {
             return EditPOST(id, returnUrl, contentItem => {
                 if (!contentItem.Has<IPublishingControlAspect>() && !contentItem.TypeDefinition.Settings.GetModel<ContentTypeSettings>().Draftable)
                     _contentManager.Publish(contentItem);
             });
         }
+
         private ActionResult EditPOST(int id, string returnUrl, Action<ContentItem> conditionallyPublish) {
             var contentItem = _contentManager.Get(id, VersionOptions.DraftRequired);
 

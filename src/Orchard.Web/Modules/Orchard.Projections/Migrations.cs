@@ -15,6 +15,7 @@ namespace Orchard.Projections {
         private readonly IRepository<MemberBindingRecord> _memberBindingRepository;
         private readonly IRepository<LayoutRecord> _layoutRepository;
         private readonly IRepository<PropertyRecord> _propertyRecordRepository;
+        private readonly IRepository<FilterRecord> _filterRepository;
 
         /// <summary>
         /// When upgrading from "1.10.x" branch code committed after 1.10.3 to "dev" branch code or 1.11, merge
@@ -28,10 +29,12 @@ namespace Orchard.Projections {
         public Migrations(
             IRepository<MemberBindingRecord> memberBindingRepository,
             IRepository<LayoutRecord> layoutRepository,
-            IRepository<PropertyRecord> propertyRecordRepository) {
+            IRepository<PropertyRecord> propertyRecordRepository,
+            IRepository<FilterRecord> filterRepository) {
             _memberBindingRepository = memberBindingRepository;
             _layoutRepository = layoutRepository;
             _propertyRecordRepository = propertyRecordRepository;
+            _filterRepository = filterRepository;
 
             T = NullLocalizer.Instance;
         }
@@ -97,6 +100,19 @@ namespace Orchard.Projections {
             });
 
             SchemaBuilder.CreateTable("FieldIndexPartRecord", table => table.ContentPartRecord());
+
+            //Adds indexes for better performances in queries
+            SchemaBuilder.AlterTable("StringFieldIndexRecord", table => table.CreateIndex("IX_PropertyName", new string[] { "PropertyName" }));
+            SchemaBuilder.AlterTable("StringFieldIndexRecord", table => table.CreateIndex("IX_FieldIndexPartRecord_Id", new string[] { "FieldIndexPartRecord_Id" }));
+
+            SchemaBuilder.AlterTable("IntegerFieldIndexRecord", table => table.CreateIndex("IX_PropertyName", new string[] { "PropertyName" }));
+            SchemaBuilder.AlterTable("IntegerFieldIndexRecord", table => table.CreateIndex("IX_FieldIndexPartRecord_Id", new string[] { "FieldIndexPartRecord_Id" }));
+
+            SchemaBuilder.AlterTable("DoubleFieldIndexRecord", table => table.CreateIndex("IX_PropertyName", new string[] { "PropertyName" }));
+            SchemaBuilder.AlterTable("DoubleFieldIndexRecord", table => table.CreateIndex("IX_FieldIndexPartRecord_Id", new string[] { "FieldIndexPartRecord_Id" }));
+
+            SchemaBuilder.AlterTable("DecimalFieldIndexRecord", table => table.CreateIndex("IX_PropertyName", new string[] { "PropertyName" }));
+            SchemaBuilder.AlterTable("DecimalFieldIndexRecord", table => table.CreateIndex("IX_FieldIndexPartRecord_Id", new string[] { "FieldIndexPartRecord_Id" }));
 
             // Query
 
@@ -243,6 +259,24 @@ namespace Orchard.Projections {
                     .DisplayedAs("Projection")
                 );
 
+            SchemaBuilder.CreateTable("NavigationQueryPartRecord",
+                table => table.ContentPartRecord()
+                    .Column<int>("Items")
+                    .Column<int>("Skip")
+                    .Column<int>("QueryPartRecord_id")
+                );
+
+            ContentDefinitionManager.AlterTypeDefinition("NavigationQueryMenuItem",
+                cfg => cfg
+                    .WithIdentity()
+                    .WithPart("NavigationQueryPart")
+                    .WithPart("MenuPart")
+                    .WithPart("CommonPart")
+                    .DisplayedAs("Query Link")
+                    .WithSetting("Description", "Injects menu items from a Query")
+                    .WithSetting("Stereotype", "MenuItem")
+                );
+
             // Default Model Bindings - CommonPartRecord
 
             _memberBindingRepository.Create(new MemberBindingRecord {
@@ -283,24 +317,6 @@ namespace Orchard.Projections {
                 DisplayName = T("Body Part Text").Text,
                 Description = T("The text from the Body part").Text
             });
-
-            SchemaBuilder.CreateTable("NavigationQueryPartRecord",
-                table => table.ContentPartRecord()
-                    .Column<int>("Items")
-                    .Column<int>("Skip")
-                    .Column<int>("QueryPartRecord_id")
-                );
-
-            ContentDefinitionManager.AlterTypeDefinition("NavigationQueryMenuItem",
-                cfg => cfg
-                    .WithPart("NavigationQueryPart")
-                    .WithPart("MenuPart")
-                    .WithPart("CommonPart")
-                    .DisplayedAs("Query Link")
-                    .WithSetting("Description", "Injects menu items from a Query")
-                    .WithSetting("Stereotype", "MenuItem")
-                    .WithIdentity()
-                );
 
             return 7;
         }
@@ -389,6 +405,18 @@ namespace Orchard.Projections {
         }
 
         public int UpdateFrom6() {
+            // This change was originally UpdateFrom6 on 1.10.x and UpdateFrom6 on dev: Casting a somewhat wide net, but
+            // filters can't be queried by the form they are using and different types of filters can (and do) use
+            // StringFilterForm. However, the "Operator" parameter's value being "ContainsAnyIfProvided" is very
+            // specific.
+            var formStateToReplace = "<Operator>ContainsAnyIfProvided</Operator>";
+            var filterRecordsToUpdate = _filterRepository.Table.Where(f => f.State.Contains(formStateToReplace)).ToList();
+            foreach (var filter in filterRecordsToUpdate) {
+                filter.State = filter.State.Replace(
+                    formStateToReplace,
+                    "<Operator>ContainsAny</Operator><IgnoreFilterIfValueIsEmpty>true</IgnoreFilterIfValueIsEmpty>");
+            }
+
             if (IsUpgradingFromOrchard_1_10_x_Version_6) {
                 MigratePropertyRecordToRewriteOutputCondition();
             }
