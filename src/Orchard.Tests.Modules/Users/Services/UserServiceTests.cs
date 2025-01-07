@@ -14,6 +14,7 @@ using Orchard.ContentManagement.MetaData.Services;
 using Orchard.ContentManagement.Records;
 using Orchard.Core.Settings.Handlers;
 using Orchard.Core.Settings.Metadata;
+using Orchard.Core.Settings.Metadata.Records;
 using Orchard.Core.Settings.Services;
 using Orchard.Data;
 using Orchard.DisplayManagement;
@@ -59,7 +60,12 @@ namespace Orchard.Tests.Modules.Users.Services
                 typeof(UserPartRecord),
                 typeof(ContentItemVersionRecord),
                 typeof(ContentItemRecord),
-                typeof(ContentTypeRecord));
+                typeof(ContentTypeRecord),
+                typeof(ContentPartDefinitionRecord),
+                typeof(ContentPartFieldDefinitionRecord),
+                typeof(ContentFieldDefinitionRecord),
+                typeof(ContentTypeDefinitionRecord),
+                typeof(ContentTypePartDefinitionRecord));
         }
 
         [TestFixtureTearDown]

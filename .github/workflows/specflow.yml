@@ -16,6 +16,7 @@ jobs:
     strategy:
       matrix:
         branch: [dev, 1.10.x]
+      fail-fast: false
 
     steps:
       - name: Clone repository

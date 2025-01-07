@@ -102,6 +102,10 @@
     <Content Include="Web.config" />
     <Content Include="Scripts\Web.config" />
     <Content Include="Styles\Web.config" />
+    <Compile Include="Constants.cs" />
+    <Compile Include="Filters\MediaProcessingHtmlFilter.cs" />
+    <Compile Include="Handlers\MediaHtmlFilterSettingsPartHandler.cs" />
+    <Compile Include="Models\MediaHtmlFilterSettingsPart.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Content Include="Module.txt" />
   </ItemGroup>
@@ -191,6 +195,9 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="Views\EditorTemplates\Parts.MediaProcessing.MediaHtmlFilterSettings.cshtml" />
   </ItemGroup>
   <PropertyGroup>
     <VisualStudioVersion Condition="'$(VisualStudioVersion)' == ''">10.0</VisualStudioVersion>
